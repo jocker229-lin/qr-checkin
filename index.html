@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#3B2A20">
+<title>普圓精舍 掃碼報到</title>
+<!-- 掃碼函式庫（固定版本） -->
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{
+    --wood:#3B2A20;      /* 檀木：鏡頭區底色 */
+    --wood-2:#5A4334;
+    --ochre:#C9A227;     /* 赭金：掃描框 */
+    --jade:#2F7A5B;      /* 玉綠：成功 */
+    --cinnabar:#B4442E;  /* 朱：錯誤 */
+    --paper:#FAFAF7;
+    --ink:#2A2622;
+    --muted:#7A716A;
+    --font:"PingFang TC","Noto Sans TC","Microsoft JhengHei","Heiti TC",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:var(--font);color:var(--ink);background:var(--paper);
+    display:flex;flex-direction:column;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    -webkit-tap-highlight-color:transparent;
+  }
+
+  /* 上方掃描區 */
+  .scan{background:var(--wood);color:#F3ECE4;flex:0 0 auto}
+  .bar{display:flex;align-items:center;gap:.6rem;padding:.55rem .9rem}
+  .bar h1{font-size:1rem;font-weight:600;margin:0;letter-spacing:.04em;flex:1}
+  .dot{width:.55rem;height:.55rem;border-radius:50%;background:var(--muted)}
+  .dot.ok{background:#6FCF97}
+  .dot.bad{background:var(--cinnabar)}
+  .conn{font-size:.8rem;opacity:.85}
+
+  .cam{position:relative;height:34vh;max-height:340px;background:#1E1612;overflow:hidden}
+  .scan.collapsed .cam{display:none}
+  #reader{width:100%;height:100%}
+  #reader video{width:100%!important;height:100%!important;object-fit:cover}
+  #reader img, #reader__dashboard, #reader__header_message{display:none!important}
+  .frame{position:absolute;inset:50% auto auto 50%;width:min(58vw,220px);aspect-ratio:1;transform:translate(-50%,-50%);pointer-events:none}
+  .frame i{position:absolute;width:28px;height:28px;border-color:var(--ochre);border-style:solid}
+  .frame i:nth-child(1){top:0;left:0;border-width:3px 0 0 3px}
+  .frame i:nth-child(2){top:0;right:0;border-width:3px 3px 0 0}
+  .frame i:nth-child(3){bottom:0;left:0;border-width:0 0 3px 3px}
+  .frame i:nth-child(4){bottom:0;right:0;border-width:0 3px 3px 0}
+  .placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.8rem;text-align:center;padding:1rem;background:#1E1612}
+  .placeholder p{margin:0;font-size:.9rem;opacity:.85;max-width:22em;line-height:1.6}
+
+  /* 結果列 */
+  .result{display:flex;align-items:baseline;gap:.8rem;padding:.6rem .9rem;background:var(--wood-2);transition:background .25s}
+  .result .id{font-size:1.9rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.06em;min-width:5.5ch}
+  .result .msg{font-size:.95rem;line-height:1.4}
+  .result.ok{background:var(--jade)}
+  .result.err{background:var(--cinnabar)}
+  .result.pending{background:#7A5E2A}
+  .result.warn{background:#A9741B}
+  .result.confirm{background:#2F5A7A}
+
+  .controls{display:flex;gap:.5rem;padding:.55rem .9rem .7rem;flex-wrap:wrap}
+  button{
+    font:inherit;font-size:.9rem;border:1px solid rgba(243,236,228,.35);background:transparent;color:#F3ECE4;
+    padding:.5rem .8rem;border-radius:6px;cursor:pointer;min-height:40px
+  }
+  button.primary{background:var(--ochre);border-color:var(--ochre);color:var(--wood);font-weight:700}
+  button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+  .manual{display:none;gap:.5rem;padding:0 .9rem .7rem}
+  .manual.show{display:flex}
+  .manual input{
+    flex:1;font:inherit;font-size:1.1rem;padding:.5rem .7rem;border-radius:6px;border:1px solid var(--ochre);
+    background:#FFF;color:var(--ink);font-variant-numeric:tabular-nums;min-width:0
+  }
+
+  /* 下方 GAS */
+  .gas{flex:1 1 auto;position:relative;min-height:0}
+  .gas iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff}
+  .gas .hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.9rem}
+
+  @media (prefers-reduced-motion:reduce){.result{transition:none}}
+</style>
+</head>
+<body>
+
+<section class="scan" id="scan">
+  <div class="bar">
+    <h1>普圓精舍 掃碼報到</h1>
+    <span class="dot" id="dot"></span>
+    <span class="conn" id="conn">報到系統連線中</span>
+  </div>
+
+  <div class="cam">
+    <div id="reader"></div>
+    <div class="frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <div class="placeholder" id="placeholder">
+      <p>點「開始掃描」後允許使用相機，把學員的 QR Code 對準框內即可。</p>
+      <button class="primary" id="btnStart">開始掃描</button>
+    </div>
+  </div>
+
+  <div class="result" id="result" aria-live="polite">
+    <span class="id" id="resId">—</span>
+    <span class="msg" id="resMsg">尚未掃描</span>
+  </div>
+
+  <div class="controls">
+    <button id="btnPause" disabled>暫停掃描</button>
+    <button id="btnFlip" disabled>切換鏡頭</button>
+    <button id="btnManual">手動輸入</button>
+    <button id="btnCollapse">收起鏡頭</button>
+  </div>
+
+  <div class="manual" id="manual">
+    <input id="manualInput" inputmode="numeric" autocomplete="off" placeholder="輸入學員編號">
+    <button class="primary" id="btnSend">送出報到</button>
+  </div>
+</section>
+
+<section class="gas">
+  <div class="hint" id="gasHint">報到系統載入中</div>
+  <iframe id="gasFrame" title="報到系統" allow="clipboard-write"></iframe>
+</section>
+
+<script>
+/* ===== 設定區：只需改這裡 ===== */
+const CONFIG = {
+  GAS_URL: 'https://script.google.com/macros/s/AKfycbw-lE1MeqKXH6mK3OH8sCv3JdCIdB2Cyigbj2gmzBFtaBxBbduWSLfdB87Smkna0fhK/exec', // 報到系統 GAS 網址（/exec 結尾）
+  ID_PATTERN: /^\d+$/,       // 只要是數字就送進報到系統（九碼學員編號、五碼學號都由報到系統判斷）
+  COOLDOWN_MS: 4000,         // 同一學號在此毫秒數內重複掃到會忽略
+  REPLY_TIMEOUT_MS: 15000    // 等 GAS 回覆的上限（本機名單沒有、要查伺服器時較久）
+};
+/* ============================== */
+
+const $ = id => document.getElementById(id);
+let gasWin = null;               // GAS 內層視窗（由 gas-ready 握手取得）
+let scanner = null, cams = [], camIdx = 0, running = false, paused = false;
+let lastCode = '', lastAt = 0;
+const pending = new Map();       // requestId -> timer
+let audioCtx = null;
+
+/* --- 1. 先註冊訊息監聽，再載入 GAS，避免漏接握手 --- */
+window.addEventListener('message', ev => {
+  if (!/\.googleusercontent\.com$/.test(new URL(ev.origin).hostname)) return;
+  const d = ev.data || {};
+  if (d.type === 'gas-ready') {
+    gasWin = ev.source;
+    setConn(true);
+  } else if (d.type === 'checkin-result') {
+    const t = pending.get(d.requestId);
+    if (t) { clearTimeout(t); pending.delete(d.requestId); }
+    var state = d.state || (d.ok ? 'ok' : 'err');
+    var fallback = { ok: '報到完成', warn: '已報到過', confirm: '請在下方確認', err: '報到未完成' }[state];
+    showResult(state, d.code || $('resId').textContent, d.message || fallback);
+    feedback(state);
+  }
+});
+$('gasFrame').addEventListener('load', () => { $('gasHint').style.display = 'none'; });
+$('gasFrame').src = CONFIG.GAS_URL;
+setTimeout(() => { if (!gasWin) setConn(false, '未連上報到系統，請確認 GAS 已加入串接程式並重新部署'); }, 15000);
+
+function setConn(ok, text){
+  $('dot').className = 'dot ' + (ok ? 'ok' : 'bad');
+  $('conn').textContent = text || (ok ? '已連線' : '未連線');
+}
+
+/* --- 2. 掃碼 --- */
+$('btnStart').addEventListener('click', startScan);
+async function startScan(){
+  unlockAudio();
+  try{
+    cams = await Html5Qrcode.getCameras();
+    if (!cams.length) throw new Error('找不到相機');
+    // 預設挑後鏡頭
+    const back = cams.findIndex(c => /back|rear|environment|後/i.test(c.label));
+    camIdx = back >= 0 ? back : cams.length - 1;
+    scanner = scanner || new Html5Qrcode('reader', { formatsToSupport:[Html5QrcodeSupportedFormats.QR_CODE], verbose:false });
+    await runCam();
+    $('placeholder').style.display = 'none';
+    $('btnPause').disabled = false;
+    $('btnFlip').disabled = cams.length < 2;
+  }catch(e){
+    showResult('err', '—', '無法開啟相機：請在瀏覽器設定允許相機，並確認網址為 https 開頭');
+  }
+}
+async function runCam(){
+  if (running) await scanner.stop();
+  await scanner.start(
+    { deviceId:{ exact: cams[camIdx].id } },
+    { fps:10, qrbox:(w,h)=>{ const s=Math.floor(Math.min(w,h)*0.6); return {width:s,height:s}; } },
+    onScan, () => {}
+  );
+  running = true; paused = false; $('btnPause').textContent = '暫停掃描';
+}
+function onScan(text){
+  const code = String(text).trim();
+  const now = Date.now();
+  if (code === lastCode && now - lastAt < CONFIG.COOLDOWN_MS) return;
+  lastCode = code; lastAt = now;
+  submit(code);
+}
+
+$('btnPause').addEventListener('click', () => {
+  if (!running) return;
+  if (paused){ scanner.resume(); paused = false; $('btnPause').textContent = '暫停掃描'; }
+  else { scanner.pause(true); paused = true; $('btnPause').textContent = '繼續掃描'; }
+});
+$('btnFlip').addEventListener('click', async () => {
+  camIdx = (camIdx + 1) % cams.length;
+  try { await runCam(); } catch(e){ showResult('err','—','切換鏡頭失敗'); }
+});
+$('btnCollapse').addEventListener('click', async () => {
+  const s = $('scan'); const collapse = !s.classList.contains('collapsed');
+  s.classList.toggle('collapsed', collapse);
+  $('btnCollapse').textContent = collapse ? '展開鏡頭' : '收起鏡頭';
+  if (running){ if (collapse && !paused){ scanner.pause(true); paused = true; } }
+  $('btnPause').textContent = paused ? '繼續掃描' : '暫停掃描';
+});
+
+/* --- 3. 手動輸入 --- */
+$('btnManual').addEventListener('click', () => {
+  $('manual').classList.toggle('show');
+  if ($('manual').classList.contains('show')) $('manualInput').focus();
+});
+$('btnSend').addEventListener('click', sendManual);
+$('manualInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendManual(); });
+function sendManual(){
+  unlockAudio();
+  const v = $('manualInput').value.trim();
+  if (v){ submit(v); $('manualInput').value = ''; }
+}
+
+/* --- 4. 送進 GAS --- */
+function submit(code){
+  if (!CONFIG.ID_PATTERN.test(code)){
+    showResult('err', code.slice(0,12), '這不是學員編號的 QR Code'); feedback(false); return;
+  }
+  if (!gasWin){
+    showResult('err', code, '報到系統尚未連線，請稍候再掃'); feedback(false); return;
+  }
+  const requestId = Date.now() + '-' + Math.random().toString(36).slice(2,7);
+  gasWin.postMessage({ type:'qr-scan', code, requestId }, '*');
+  showResult('pending', code, '報到處理中');
+  pending.set(requestId, setTimeout(() => {
+    pending.delete(requestId);
+    showResult('err', code, '報到系統沒有回應，請看下方畫面確認是否已報到');
+  }, CONFIG.REPLY_TIMEOUT_MS));
+}
+
+function showResult(state, id, msg){
+  $('result').className = 'result ' + state;
+  $('resId').textContent = id;
+  $('resMsg').textContent = msg;
+}
+
+/* --- 5. 提示音與震動 --- */
+function unlockAudio(){
+  if (!audioCtx){ try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){} }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+// state：ok 成功／warn 重複或請假／confirm 需在下方操作／err 失敗（也接受舊的 true/false）
+function feedback(state){
+  if (state === true) state = 'ok';
+  if (state === false) state = 'err';
+  const P = {
+    ok:      { vib: 80,             notes: [[1046, 0, .15]] },
+    warn:    { vib: [60, 80, 60],   notes: [[587, 0, .1], [587, .17, .1]] },
+    confirm: { vib: [40, 60, 40],   notes: [[784, 0, .12], [784, .2, .12]] },
+    err:     { vib: [60,60,60,60,60], notes: [[262, 0, .45]] }
+  }[state] || { vib: 0, notes: [] };
+  if (navigator.vibrate && P.vib) navigator.vibrate(P.vib);
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  P.notes.forEach(n => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = n[0];
+    g.gain.setValueAtTime(0.15, now + n[1]);
+    g.gain.exponentialRampToValueAtTime(0.001, now + n[1] + n[2]);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(now + n[1]); o.stop(now + n[1] + n[2] + .02);
+  });
+}
+</script>
+</body>
+</html>
