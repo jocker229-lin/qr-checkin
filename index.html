@@ -43,19 +43,13 @@
   #reader{width:100%;height:100%}
   #reader video{width:100%!important;height:100%!important;object-fit:cover}
   #reader img, #reader__dashboard, #reader__header_message{display:none!important}
-  .frame{position:absolute;inset:50% auto auto 50%;width:min(58vw,220px);aspect-ratio:1;transform:translate(-50%,-50%);pointer-events:none}
-  .frame i{position:absolute;width:28px;height:28px;border-color:var(--ochre);border-style:solid}
-  .frame i:nth-child(1){top:0;left:0;border-width:3px 0 0 3px}
-  .frame i:nth-child(2){top:0;right:0;border-width:3px 3px 0 0}
-  .frame i:nth-child(3){bottom:0;left:0;border-width:0 0 3px 3px}
-  .frame i:nth-child(4){bottom:0;right:0;border-width:0 3px 3px 0}
   .placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.8rem;text-align:center;padding:1rem;background:#1E1612}
   .placeholder p{margin:0;font-size:.9rem;opacity:.85;max-width:22em;line-height:1.6}
 
   /* 結果列 */
-  .result{display:flex;align-items:baseline;gap:.8rem;padding:.6rem .9rem;background:var(--wood-2);transition:background .25s}
-  .result .id{font-size:1.9rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.06em;min-width:5.5ch}
-  .result .msg{font-size:.95rem;line-height:1.4}
+  .result{display:flex;flex-direction:column;gap:.15rem;padding:.55rem .9rem .65rem;background:var(--wood-2);transition:background .25s}
+  .result .id{font-size:clamp(1.4rem,7vw,1.9rem);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.04em;line-height:1.2;word-break:break-all}
+  .result .msg{font-size:.95rem;line-height:1.45}
   .result.ok{background:var(--jade)}
   .result.err{background:var(--cinnabar)}
   .result.pending{background:#7A5E2A}
@@ -95,7 +89,6 @@
 
   <div class="cam">
     <div id="reader"></div>
-    <div class="frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <div class="placeholder" id="placeholder">
       <p>點「開始掃描」後允許使用相機，把學員的 QR Code 對準框內即可。</p>
       <button class="primary" id="btnStart">開始掃描</button>
@@ -140,6 +133,7 @@ let gasWin = null;               // GAS 內層視窗（由 gas-ready 握手取�
 let scanner = null, cams = [], camIdx = 0, running = false, paused = false;
 let lastCode = '', lastAt = 0;
 const pending = new Map();       // requestId -> timer
+const acked = new Set();         // 報到系統回覆「已收到」的 requestId
 let audioCtx = null;
 
 /* --- 1. 先註冊訊息監聽，再載入 GAS，避免漏接握手 --- */
@@ -149,6 +143,10 @@ window.addEventListener('message', ev => {
   if (d.type === 'gas-ready') {
     gasWin = ev.source;
     setConn(true);
+  } else if (d.type === 'scan-ack') {
+    // 報到系統已收到學號，正在處理
+    if (pending.has(d.requestId)) $('resMsg').textContent = '報到系統已收到，處理中';
+    acked.add(d.requestId);
   } else if (d.type === 'checkin-result') {
     const t = pending.get(d.requestId);
     if (t) { clearTimeout(t); pending.delete(d.requestId); }
@@ -246,7 +244,9 @@ function submit(code){
   showResult('pending', code, '報到處理中');
   pending.set(requestId, setTimeout(() => {
     pending.delete(requestId);
-    showResult('err', code, '報到系統沒有回應，請看下方畫面確認是否已報到');
+    showResult('err', code, acked.has(requestId)
+      ? '報到系統已收到但沒有回報結果，請看下方畫面確認是否已報到'
+      : '報到系統沒有收到學號，請重新整理此頁再試');
   }, CONFIG.REPLY_TIMEOUT_MS));
 }
 
